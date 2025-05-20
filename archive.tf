@@ -1,14 +1,26 @@
-resource "random_uuid" "id" {}
+# Get the hash of all relevant files that should trigger a rebuild
+data "external" "source_hash" {
+  program = ["bash", "-c", <<EOF
+    {
+      if [ -f "${var.package_file}" ]; then
+        echo "{\"hash\": \"$(sha1sum ${var.package_file} | cut -d ' ' -f1)\"}"
+      else
+        echo "{\"hash\": \"no-package-file\"}"
+      fi
+    }
+  EOF
+  ]
+}
 
 locals {
-  dist    = abspath("${path.module}/dist/${random_uuid.id.result}")
+  dist  = abspath("${path.module}/dist/${data.external.source_hash.result.hash}")
   archive = "${local.dist}.zip"
-
 }
 
 resource "null_resource" "build" {
   triggers = {
-    run = timestamp()
+    # Only rebuild when the package file changes
+    package_file_hash = data.external.source_hash.result.hash
   }
 
   provisioner "local-exec" {
