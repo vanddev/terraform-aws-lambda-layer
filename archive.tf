@@ -1,30 +1,18 @@
-# Get the hash of all relevant files that should trigger a rebuild
-data "external" "source_hash" {
-  program = ["bash", "-c", <<EOF
-    {
-      if [ -f "${var.package_file}" ]; then
-        echo "{\"hash\": \"$(sha1sum ${var.package_file} | cut -d ' ' -f1)\"}"
-      else
-        echo "{\"hash\": \"no-package-file\"}"
-      fi
-    }
-  EOF
-  ]
-}
-
+# Generate a hash of the package file to trigger rebuilds
 locals {
-  dist  = abspath("${path.module}/dist/${data.external.source_hash.result.hash}")
-  archive = "${local.dist}.zip"
+  # Create a hash based on file content or a default value
+  package_file_hash = var.package_file != null ? filemd5(var.package_file) : "no-package-file"
+  dist_hash         = substr(local.package_file_hash, 0, 40)
+  dist              = abspath("${path.module}/dist/${local.dist_hash}")
+  archive           = "${local.dist}.zip"
 }
 
-resource "null_resource" "build" {
-  triggers = {
-    # Only rebuild when the package file changes
-    package_file_hash = data.external.source_hash.result.hash
-  }
+# Build the Lambda layer using terraform_data and local-exec
+resource "terraform_data" "build" {
+  triggers_replace = [local.package_file_hash]
 
   provisioner "local-exec" {
-    command = "${path.module}/build.sh"
+    command = "bash ${path.module}/build.sh"
     environment = {
       DIST_DIR      = local.dist
       SOURCE_DIR    = var.source_dir
@@ -41,6 +29,6 @@ data "archive_file" "layer" {
   output_path = local.archive
 
   depends_on = [
-    null_resource.build
+    terraform_data.build
   ]
 }

@@ -2,10 +2,13 @@
 
 set -e
 set -o pipefail
-set -o xtrace
 
 parse_environment_variables() {
   DIST_DIR="${DIST_DIR:?'DIST_DIR variable missing.'}"
+  SOURCE_DIR="${SOURCE_DIR:-}"
+  SOURCE_TYPE="${SOURCE_TYPE:-}"
+  PACKAGE_FILE="${PACKAGE_FILE:-}"
+  RSYNC_PATTERN="${RSYNC_PATTERN:-}"
 }
 
 clean() {
@@ -13,6 +16,15 @@ clean() {
 }
 
 install_dependencies() {
+  if [ -z "$PACKAGE_FILE" ] || [ "$PACKAGE_FILE" = "null" ]; then
+    if [ -z "$SOURCE_DIR" ] || [ -z "$SOURCE_TYPE" ]; then
+      echo "Error: Either PACKAGE_FILE or both SOURCE_DIR and SOURCE_TYPE must be provided"
+      exit 1
+    fi
+    build_from_source_dir
+    return
+  fi
+
   case $PACKAGE_FILE in
 
   *package.json)
@@ -63,8 +75,11 @@ install_pip_dependencies() {
 }
 
 install_gem_dependencies() {
-  SOURCE_DIR="${SOURCE_DIR:?'SOURCE_DIR variable missing.'}"
-  mkdir -p "$DIST_DIR"
+  if [ -z "$SOURCE_DIR" ] || [ ! -d "$SOURCE_DIR" ]; then
+    echo "Error: SOURCE_DIR is not set or does not exist"
+    exit 1
+  fi
+  mkdir -p "$DIST_DIR/ruby"
   pushd "${SOURCE_DIR}" >/dev/null || exit
   bundle config --local path "$DIST_DIR"
   bundle config --local deployment true
@@ -76,8 +91,14 @@ install_gem_dependencies() {
 }
 
 build_from_source_dir() {
-  SOURCE_DIR="${SOURCE_DIR:?'SOURCE_DIR variable missing.'}"
-  SOURCE_TYPE="${SOURCE_TYPE:?'SOURCE_TYPE variable missing.'}"
+  if [ -z "$SOURCE_DIR" ] || [ -z "$SOURCE_TYPE" ]; then
+    echo "Error: Both SOURCE_DIR and SOURCE_TYPE must be provided for source directory build"
+    exit 1
+  fi
+  if [ ! -d "$SOURCE_DIR" ]; then
+    echo "Error: SOURCE_DIR does not exist: $SOURCE_DIR"
+    exit 1
+  fi
 
   local dist_dir="$DIST_DIR/${SOURCE_TYPE}"
   mkdir -p "$dist_dir"
